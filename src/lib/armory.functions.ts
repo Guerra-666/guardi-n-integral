@@ -76,6 +76,125 @@ export const createUser = createServerFn({ method: "POST" })
     });
   });
 
+export const updateUser = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string; name: string; role: "OFICIAL" | "SARGENTO" | "PERSONAL"; rfid: string }) => d)
+  .handler(async ({ data }) => {
+    const name = (data.name ?? "").trim();
+    const rfid = (data.rfid ?? "").trim();
+    if (name.length < 3 || name.length > 100) throw new Error("El nombre debe tener entre 3 y 100 caracteres.");
+    if (!/^[A-Za-z0-9\-_.]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
+    if (!["OFICIAL", "SARGENTO", "PERSONAL"].includes(data.role)) throw new Error("Rol inválido.");
+    return withDb(async (db) => {
+      const u = await db.execute({ sql: "SELECT id FROM users WHERE id = ?", args: [data.id] });
+      if (u.rows.length === 0) throw new Error("Persona no encontrada.");
+      const dup = await db.execute({ sql: "SELECT id FROM users WHERE rfid_code = ? AND id <> ?", args: [rfid, data.id] });
+      if (dup.rows.length > 0) throw new Error("Ese código RFID ya está asignado a otra persona.");
+      await db.execute({
+        sql: "UPDATE users SET name = ?, role = ?, rfid_code = ? WHERE id = ?",
+        args: [name, data.role, rfid, data.id],
+      });
+      return { ok: true, message: `Persona actualizada: ${name}.` };
+    });
+  });
+
+export const deleteUser = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    return withDb(async (db) => {
+      const u = await db.execute({ sql: "SELECT name FROM users WHERE id = ?", args: [data.id] });
+      if (u.rows.length === 0) throw new Error("Persona no encontrada.");
+      const shift = await db.execute({
+        sql: "SELECT id FROM attendance_logs WHERE user_id = ? AND check_out_timestamp IS NULL",
+        args: [data.id],
+      });
+      if (shift.rows.length > 0) throw new Error("No se puede eliminar: la persona tiene un turno activo.");
+      const loans = await db.execute({
+        sql: "SELECT id FROM weapon_transactions WHERE recipient_user_id = ? AND returned_at_timestamp IS NULL",
+        args: [data.id],
+      });
+      if (loans.rows.length > 0) throw new Error("No se puede eliminar: la persona tiene armamento sin devolver.");
+      const refs = await db.execute({
+        sql: `SELECT id FROM weapon_transactions
+              WHERE recipient_user_id = ? OR authorizing_user_id = ?
+                 OR co_authorizing_officer_id = ? OR return_received_by_user_id = ?
+              LIMIT 1`,
+        args: [data.id, data.id, data.id, data.id],
+      });
+      const att = await db.execute({ sql: "SELECT id FROM attendance_logs WHERE user_id = ? LIMIT 1", args: [data.id] });
+      if (refs.rows.length > 0 || att.rows.length > 0) throw new Error("No se puede eliminar: la persona tiene historial registrado. Eliminación bloqueada por integridad.");
+      await db.execute({ sql: "DELETE FROM users WHERE id = ?", args: [data.id] });
+      return { ok: true, message: `Persona eliminada: ${(u.rows[0] as any).name}.` };
+    });
+  });
+
+export const createWeapon = createServerFn({ method: "POST" })
+  .inputValidator((d: { serial: string; name: string; characteristics: string; status?: "DISPONIBLE" | "MANTENIMIENTO" }) => d)
+  .handler(async ({ data }) => {
+    const serial = (data.serial ?? "").trim();
+    const name = (data.name ?? "").trim();
+    const chars = (data.characteristics ?? "").trim();
+    const status = data.status ?? "DISPONIBLE";
+    if (serial.length < 3 || serial.length > 50) throw new Error("El número de serie debe tener entre 3 y 50 caracteres.");
+    if (name.length < 3 || name.length > 100) throw new Error("La denominación debe tener entre 3 y 100 caracteres.");
+    if (chars.length < 3 || chars.length > 300) throw new Error("Las características deben tener entre 3 y 300 caracteres.");
+    if (!["DISPONIBLE", "MANTENIMIENTO"].includes(status)) throw new Error("Estado inicial inválido.");
+    return withDb(async (db) => {
+      const exists = await db.execute({ sql: "SELECT id FROM weapons WHERE serial_number = ?", args: [serial] });
+      if (exists.rows.length > 0) throw new Error("Ya existe un arma con ese número de serie.");
+      const id = uid("w");
+      await db.execute({
+        sql: "INSERT INTO weapons (id, serial_number, name, characteristics, current_status) VALUES (?, ?, ?, ?, ?)",
+        args: [id, serial, name, chars, status],
+      });
+      return { ok: true, message: `Arma registrada: ${name} (${serial}).` };
+    });
+  });
+
+export const updateWeapon = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string; serial: string; name: string; characteristics: string; status: "DISPONIBLE" | "PRESTADA" | "MANTENIMIENTO" }) => d)
+  .handler(async ({ data }) => {
+    const serial = (data.serial ?? "").trim();
+    const name = (data.name ?? "").trim();
+    const chars = (data.characteristics ?? "").trim();
+    if (serial.length < 3 || serial.length > 50) throw new Error("El número de serie debe tener entre 3 y 50 caracteres.");
+    if (name.length < 3 || name.length > 100) throw new Error("La denominación debe tener entre 3 y 100 caracteres.");
+    if (chars.length < 3 || chars.length > 300) throw new Error("Las características deben tener entre 3 y 300 caracteres.");
+    if (!["DISPONIBLE", "PRESTADA", "MANTENIMIENTO"].includes(data.status)) throw new Error("Estado inválido.");
+    return withDb(async (db) => {
+      const w = await db.execute({ sql: "SELECT current_status FROM weapons WHERE id = ?", args: [data.id] });
+      if (w.rows.length === 0) throw new Error("Arma no encontrada.");
+      const currentStatus = (w.rows[0] as any).current_status as string;
+      if (currentStatus === "PRESTADA" && data.status !== "PRESTADA") {
+        throw new Error("No se puede cambiar el estado de un arma actualmente PRESTADA. Registre primero la devolución.");
+      }
+      if (data.status === "PRESTADA" && currentStatus !== "PRESTADA") {
+        throw new Error("El estado PRESTADA se asigna automáticamente al registrar un préstamo.");
+      }
+      const dup = await db.execute({ sql: "SELECT id FROM weapons WHERE serial_number = ? AND id <> ?", args: [serial, data.id] });
+      if (dup.rows.length > 0) throw new Error("Ese número de serie ya está asignado a otra arma.");
+      await db.execute({
+        sql: "UPDATE weapons SET serial_number = ?, name = ?, characteristics = ?, current_status = ? WHERE id = ?",
+        args: [serial, name, chars, data.status, data.id],
+      });
+      return { ok: true, message: `Arma actualizada: ${name}.` };
+    });
+  });
+
+export const deleteWeapon = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string }) => d)
+  .handler(async ({ data }) => {
+    return withDb(async (db) => {
+      const w = await db.execute({ sql: "SELECT name, current_status FROM weapons WHERE id = ?", args: [data.id] });
+      if (w.rows.length === 0) throw new Error("Arma no encontrada.");
+      const row = w.rows[0] as any;
+      if (row.current_status === "PRESTADA") throw new Error("No se puede eliminar: el arma está PRESTADA.");
+      const refs = await db.execute({ sql: "SELECT id FROM weapon_transactions WHERE weapon_id = ? LIMIT 1", args: [data.id] });
+      if (refs.rows.length > 0) throw new Error("No se puede eliminar: el arma tiene historial de transacciones.");
+      await db.execute({ sql: "DELETE FROM weapons WHERE id = ?", args: [data.id] });
+      return { ok: true, message: `Arma eliminada: ${row.name}.` };
+    });
+  });
+
 export const scanCheckIn = createServerFn({ method: "POST" })
   .inputValidator((d: { rfid: string }) => d)
   .handler(async ({ data }) => {
