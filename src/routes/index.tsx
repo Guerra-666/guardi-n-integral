@@ -9,6 +9,7 @@ import {
   createLoan,
   returnWeapon,
   getReports,
+  createUser,
 } from "@/lib/armory.functions";
 import logoArmas from "@/assets/logo-armas.png";
 import logoUdefa from "@/assets/logo-udefa.png";
