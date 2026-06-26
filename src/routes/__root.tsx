@@ -83,6 +83,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { property: "og:description", content: "Plataforma militar para control de personal y armería." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "SICAR — Sistema de Control de Armería" },
+      { name: "twitter:description", content: "Plataforma militar para control de personal y armería." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/cef7bce1-1641-4801-8185-98b3da7be9c9/id-preview-323180e6--37601ae6-bd35-47f2-8898-3701eb4ae39f.lovable.app-1782517487213.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/cef7bce1-1641-4801-8185-98b3da7be9c9/id-preview-323180e6--37601ae6-bd35-47f2-8898-3701eb4ae39f.lovable.app-1782517487213.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
