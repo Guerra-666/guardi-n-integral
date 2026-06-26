@@ -56,6 +56,26 @@ export const getDashboardData = createServerFn({ method: "GET" }).handler(async 
   });
 });
 
+export const createUser = createServerFn({ method: "POST" })
+  .inputValidator((d: { name: string; role: "OFICIAL" | "SARGENTO" | "PERSONAL"; rfid: string }) => d)
+  .handler(async ({ data }) => {
+    const name = (data.name ?? "").trim();
+    const rfid = (data.rfid ?? "").trim();
+    if (name.length < 3 || name.length > 100) throw new Error("El nombre debe tener entre 3 y 100 caracteres.");
+    if (!/^[A-Za-z0-9\-_.]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
+    if (!["OFICIAL", "SARGENTO", "PERSONAL"].includes(data.role)) throw new Error("Rol inválido.");
+    return withDb(async (db) => {
+      const exists = await db.execute({ sql: "SELECT id FROM users WHERE rfid_code = ?", args: [rfid] });
+      if (exists.rows.length > 0) throw new Error("Ya existe una persona con ese código RFID.");
+      const id = uid("u");
+      await db.execute({
+        sql: "INSERT INTO users (id, rfid_code, name, role) VALUES (?, ?, ?, ?)",
+        args: [id, rfid, name, data.role],
+      });
+      return { ok: true, message: `Persona registrada: ${name} (${data.role}).` };
+    });
+  });
+
 export const scanCheckIn = createServerFn({ method: "POST" })
   .inputValidator((d: { rfid: string }) => d)
   .handler(async ({ data }) => {
