@@ -104,7 +104,7 @@ function Dashboard() {
             />
           )}
 
-          {tab === "armeria" && data && <ArmoryPanel weapons={data.weapons} />}
+          {tab === "armeria" && data && <ArmoryPanel weapons={data.weapons} onDone={invalidate} toast={pushToast} />}
 
           {tab === "prestamo" && data && (
             <LoanPanel
