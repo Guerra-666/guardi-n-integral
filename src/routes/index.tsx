@@ -713,9 +713,17 @@ function PersonnelPanel({
   users: any[];
 }) {
   const createUserFn = useServerFn(createUser);
+  const updateUserFn = useServerFn(updateUser);
+  const deleteUserFn = useServerFn(deleteUser);
+
   const [name, setName] = useState("");
   const [role, setRole] = useState<"OFICIAL" | "SARGENTO" | "PERSONAL">("PERSONAL");
   const [rfid, setRfid] = useState("");
+
+  const [editing, setEditing] = useState<any | null>(null);
+  const [eName, setEName] = useState("");
+  const [eRole, setERole] = useState<"OFICIAL" | "SARGENTO" | "PERSONAL">("PERSONAL");
+  const [eRfid, setERfid] = useState("");
 
   const mCreate = useMutation({
     mutationFn: () => createUserFn({ data: { name, role, rfid } }),
@@ -726,6 +734,25 @@ function PersonnelPanel({
     },
     onError: (e: any) => toast("err", e?.message ?? "Error"),
   });
+
+  const mUpdate = useMutation({
+    mutationFn: () => updateUserFn({ data: { id: editing.id, name: eName, role: eRole, rfid: eRfid } }),
+    onSuccess: (r) => { toast("ok", r.message); setEditing(null); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  const mDelete = useMutation({
+    mutationFn: (id: string) => deleteUserFn({ data: { id } }),
+    onSuccess: (r) => { toast("ok", r.message); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  const startEdit = (u: any) => {
+    setEditing(u);
+    setEName(u.name);
+    setERole(u.role);
+    setERfid(u.rfid_code);
+  };
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
@@ -784,13 +811,14 @@ function PersonnelPanel({
       </Card>
 
       <Card title={`Personal Registrado (${users.length})`}>
-        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted sticky top-0">
               <tr>
                 <th className="text-left px-3 py-2">Nombre</th>
                 <th className="text-left px-3 py-2">Rol</th>
                 <th className="text-left px-3 py-2">RFID</th>
+                <th className="text-right px-3 py-2">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -799,12 +827,90 @@ function PersonnelPanel({
                   <td className="px-3 py-2">{u.name}</td>
                   <td className="px-3 py-2"><RoleBadge role={u.role} /></td>
                   <td className="px-3 py-2 font-mono text-xs">{u.rfid_code}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => startEdit(u)}
+                      className="text-xs font-semibold bg-secondary text-secondary-foreground border border-border rounded px-2 py-1 mr-1 hover:opacity-90"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      disabled={mDelete.isPending}
+                      onClick={() => {
+                        if (confirm(`¿Eliminar a ${u.name}? Solo es posible si no tiene historial registrado.`)) {
+                          mDelete.mutate(u.id);
+                        }
+                      }}
+                      className="text-xs font-semibold bg-destructive text-destructive-foreground rounded px-2 py-1 disabled:opacity-40"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-md">
+            <header className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold">Editar Persona</h3>
+              <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+            </header>
+            <div className="p-5 space-y-4">
+              <Field label="Nombre completo y grado">
+                <input
+                  value={eName}
+                  onChange={(e) => setEName(e.target.value)}
+                  maxLength={100}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Rol / Jerarquía">
+                <div className="grid grid-cols-3 gap-2">
+                  {(["OFICIAL", "SARGENTO", "PERSONAL"] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setERole(r)}
+                      className={`px-3 py-2 text-sm font-semibold rounded-md border transition-colors ${
+                        eRole === r
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background text-foreground border-input hover:bg-muted"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Código RFID">
+                <input
+                  value={eRfid}
+                  onChange={(e) => setERfid(e.target.value.toUpperCase())}
+                  maxLength={50}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm font-mono"
+                />
+              </Field>
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm font-semibold rounded-md border border-border bg-background hover:bg-muted">
+                  Cancelar
+                </button>
+                <button
+                  disabled={mUpdate.isPending}
+                  onClick={() => mUpdate.mutate()}
+                  className="px-4 py-2 text-sm font-semibold rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+                >
+                  {mUpdate.isPending ? "Guardando…" : "Guardar Cambios"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
