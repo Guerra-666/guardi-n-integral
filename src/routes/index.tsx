@@ -10,6 +10,11 @@ import {
   returnWeapon,
   getReports,
   createUser,
+  updateUser,
+  deleteUser,
+  createWeapon,
+  updateWeapon,
+  deleteWeapon,
 } from "@/lib/armory.functions";
 import logoArmas from "@/assets/logo-armas.png";
 import logoUdefa from "@/assets/logo-udefa.png";
@@ -99,7 +104,7 @@ function Dashboard() {
             />
           )}
 
-          {tab === "armeria" && data && <ArmoryPanel weapons={data.weapons} />}
+          {tab === "armeria" && data && <ArmoryPanel weapons={data.weapons} onDone={invalidate} toast={pushToast} />}
 
           {tab === "prestamo" && data && (
             <LoanPanel
@@ -337,32 +342,234 @@ function ShiftPanel({
 }
 
 /* ------------------ Armory Panel ------------------ */
-function ArmoryPanel({ weapons }: { weapons: any[] }) {
+function ArmoryPanel({
+  weapons,
+  onDone,
+  toast,
+}: {
+  weapons: any[];
+  onDone: () => void;
+  toast: (k: "ok" | "err", m: string) => void;
+}) {
+  const createW = useServerFn(createWeapon);
+  const updateW = useServerFn(updateWeapon);
+  const deleteW = useServerFn(deleteWeapon);
+
+  const [serial, setSerial] = useState("");
+  const [name, setName] = useState("");
+  const [chars, setChars] = useState("");
+  const [status, setStatus] = useState<"DISPONIBLE" | "MANTENIMIENTO">("DISPONIBLE");
+
+  const [editing, setEditing] = useState<any | null>(null);
+  const [eSerial, setESerial] = useState("");
+  const [eName, setEName] = useState("");
+  const [eChars, setEChars] = useState("");
+  const [eStatus, setEStatus] = useState<"DISPONIBLE" | "PRESTADA" | "MANTENIMIENTO">("DISPONIBLE");
+
+  const mCreate = useMutation({
+    mutationFn: () => createW({ data: { serial, name, characteristics: chars, status } }),
+    onSuccess: (r) => { toast("ok", r.message); setSerial(""); setName(""); setChars(""); setStatus("DISPONIBLE"); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+  const mUpdate = useMutation({
+    mutationFn: () => updateW({ data: { id: editing.id, serial: eSerial, name: eName, characteristics: eChars, status: eStatus } }),
+    onSuccess: (r) => { toast("ok", r.message); setEditing(null); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+  const mDelete = useMutation({
+    mutationFn: (id: string) => deleteW({ data: { id } }),
+    onSuccess: (r) => { toast("ok", r.message); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  const startEdit = (w: any) => {
+    setEditing(w);
+    setESerial(w.serial_number);
+    setEName(w.name);
+    setEChars(w.characteristics);
+    setEStatus(w.current_status);
+  };
+
   return (
-    <Card title="Inventario de Armamento">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted">
-            <tr>
-              <th className="text-left px-3 py-2">Serie</th>
-              <th className="text-left px-3 py-2">Denominación</th>
-              <th className="text-left px-3 py-2">Características</th>
-              <th className="text-left px-3 py-2">Estado</th>
-            </tr>
-          </thead>
-          <tbody>
-            {weapons.map((w) => (
-              <tr key={w.id} className="border-t border-border">
-                <td className="px-3 py-2 font-mono">{w.serial_number}</td>
-                <td className="px-3 py-2 font-medium">{w.name}</td>
-                <td className="px-3 py-2 text-muted-foreground">{w.characteristics}</td>
-                <td className="px-3 py-2"><StatusBadge status={w.current_status} /></td>
+    <div className="grid lg:grid-cols-2 gap-6">
+      <Card title="Registrar Nueva Arma">
+        <div className="space-y-4">
+          <Field label="Número de serie">
+            <input
+              value={serial}
+              onChange={(e) => setSerial(e.target.value.toUpperCase())}
+              placeholder="Ej. FX-AR15-0010"
+              maxLength={50}
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+          <Field label="Denominación">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej. Fusil AR-15"
+              maxLength={100}
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Características">
+            <textarea
+              value={chars}
+              onChange={(e) => setChars(e.target.value)}
+              placeholder="Calibre, capacidad de cargador, observaciones…"
+              maxLength={300}
+              rows={2}
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+            />
+          </Field>
+          <Field label="Estado inicial">
+            <div className="grid grid-cols-2 gap-2">
+              {(["DISPONIBLE", "MANTENIMIENTO"] as const).map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatus(s)}
+                  className={`px-3 py-2 text-sm font-semibold rounded-md border transition-colors ${
+                    status === s
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-foreground border-input hover:bg-muted"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <button
+            disabled={!serial.trim() || !name.trim() || !chars.trim() || mCreate.isPending}
+            onClick={() => mCreate.mutate()}
+            className="w-full bg-primary text-primary-foreground rounded-md px-4 py-2.5 font-semibold disabled:opacity-50"
+          >
+            {mCreate.isPending ? "Registrando…" : "Registrar Arma"}
+          </button>
+        </div>
+      </Card>
+
+      <Card title={`Inventario de Armamento (${weapons.length})`}>
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2">Serie</th>
+                <th className="text-left px-3 py-2">Denominación</th>
+                <th className="text-left px-3 py-2">Estado</th>
+                <th className="text-right px-3 py-2">Acciones</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+            </thead>
+            <tbody>
+              {weapons.map((w) => (
+                <tr key={w.id} className="border-t border-border align-top">
+                  <td className="px-3 py-2 font-mono">{w.serial_number}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{w.name}</div>
+                    <div className="text-xs text-muted-foreground">{w.characteristics}</div>
+                  </td>
+                  <td className="px-3 py-2"><StatusBadge status={w.current_status} /></td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => startEdit(w)}
+                      className="text-xs font-semibold bg-secondary text-secondary-foreground border border-border rounded px-2 py-1 mr-1 hover:opacity-90"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      disabled={w.current_status === "PRESTADA" || mDelete.isPending}
+                      onClick={() => {
+                        if (confirm(`¿Eliminar el arma ${w.serial_number}? Esta acción es irreversible.`)) {
+                          mDelete.mutate(w.id);
+                        }
+                      }}
+                      className="text-xs font-semibold bg-destructive text-destructive-foreground rounded px-2 py-1 disabled:opacity-40"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-md">
+            <header className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold">Editar Arma</h3>
+              <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+            </header>
+            <div className="p-5 space-y-4">
+              <Field label="Número de serie">
+                <input
+                  value={eSerial}
+                  onChange={(e) => setESerial(e.target.value.toUpperCase())}
+                  maxLength={50}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm font-mono"
+                />
+              </Field>
+              <Field label="Denominación">
+                <input
+                  value={eName}
+                  onChange={(e) => setEName(e.target.value)}
+                  maxLength={100}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Características">
+                <textarea
+                  value={eChars}
+                  onChange={(e) => setEChars(e.target.value)}
+                  maxLength={300}
+                  rows={2}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Estado">
+                <div className="grid grid-cols-3 gap-2">
+                  {(["DISPONIBLE", "PRESTADA", "MANTENIMIENTO"] as const).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={s === "PRESTADA" && editing.current_status !== "PRESTADA"}
+                      onClick={() => setEStatus(s)}
+                      className={`px-2 py-2 text-xs font-semibold rounded-md border transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+                        eStatus === s
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background text-foreground border-input hover:bg-muted"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {editing.current_status === "PRESTADA" && (
+                  <p className="text-xs text-warning-foreground bg-warning/30 rounded px-2 py-1 mt-2">
+                    Esta arma está PRESTADA. Para cambiar el estado, registre primero la devolución.
+                  </p>
+                )}
+              </Field>
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm font-semibold rounded-md border border-border bg-background hover:bg-muted">
+                  Cancelar
+                </button>
+                <button
+                  disabled={mUpdate.isPending}
+                  onClick={() => mUpdate.mutate()}
+                  className="px-4 py-2 text-sm font-semibold rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+                >
+                  {mUpdate.isPending ? "Guardando…" : "Guardar Cambios"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -506,9 +713,17 @@ function PersonnelPanel({
   users: any[];
 }) {
   const createUserFn = useServerFn(createUser);
+  const updateUserFn = useServerFn(updateUser);
+  const deleteUserFn = useServerFn(deleteUser);
+
   const [name, setName] = useState("");
   const [role, setRole] = useState<"OFICIAL" | "SARGENTO" | "PERSONAL">("PERSONAL");
   const [rfid, setRfid] = useState("");
+
+  const [editing, setEditing] = useState<any | null>(null);
+  const [eName, setEName] = useState("");
+  const [eRole, setERole] = useState<"OFICIAL" | "SARGENTO" | "PERSONAL">("PERSONAL");
+  const [eRfid, setERfid] = useState("");
 
   const mCreate = useMutation({
     mutationFn: () => createUserFn({ data: { name, role, rfid } }),
@@ -519,6 +734,25 @@ function PersonnelPanel({
     },
     onError: (e: any) => toast("err", e?.message ?? "Error"),
   });
+
+  const mUpdate = useMutation({
+    mutationFn: () => updateUserFn({ data: { id: editing.id, name: eName, role: eRole, rfid: eRfid } }),
+    onSuccess: (r) => { toast("ok", r.message); setEditing(null); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  const mDelete = useMutation({
+    mutationFn: (id: string) => deleteUserFn({ data: { id } }),
+    onSuccess: (r) => { toast("ok", r.message); onDone(); },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  const startEdit = (u: any) => {
+    setEditing(u);
+    setEName(u.name);
+    setERole(u.role);
+    setERfid(u.rfid_code);
+  };
 
   return (
     <div className="grid lg:grid-cols-2 gap-6">
@@ -577,13 +811,14 @@ function PersonnelPanel({
       </Card>
 
       <Card title={`Personal Registrado (${users.length})`}>
-        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto">
           <table className="w-full text-sm">
             <thead className="bg-muted sticky top-0">
               <tr>
                 <th className="text-left px-3 py-2">Nombre</th>
                 <th className="text-left px-3 py-2">Rol</th>
                 <th className="text-left px-3 py-2">RFID</th>
+                <th className="text-right px-3 py-2">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -592,12 +827,90 @@ function PersonnelPanel({
                   <td className="px-3 py-2">{u.name}</td>
                   <td className="px-3 py-2"><RoleBadge role={u.role} /></td>
                   <td className="px-3 py-2 font-mono text-xs">{u.rfid_code}</td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => startEdit(u)}
+                      className="text-xs font-semibold bg-secondary text-secondary-foreground border border-border rounded px-2 py-1 mr-1 hover:opacity-90"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      disabled={mDelete.isPending}
+                      onClick={() => {
+                        if (confirm(`¿Eliminar a ${u.name}? Solo es posible si no tiene historial registrado.`)) {
+                          mDelete.mutate(u.id);
+                        }
+                      }}
+                      className="text-xs font-semibold bg-destructive text-destructive-foreground rounded px-2 py-1 disabled:opacity-40"
+                    >
+                      Eliminar
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Card>
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-card border border-border rounded-lg shadow-xl w-full max-w-md">
+            <header className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <h3 className="font-semibold">Editar Persona</h3>
+              <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-foreground">✕</button>
+            </header>
+            <div className="p-5 space-y-4">
+              <Field label="Nombre completo y grado">
+                <input
+                  value={eName}
+                  onChange={(e) => setEName(e.target.value)}
+                  maxLength={100}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+                />
+              </Field>
+              <Field label="Rol / Jerarquía">
+                <div className="grid grid-cols-3 gap-2">
+                  {(["OFICIAL", "SARGENTO", "PERSONAL"] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setERole(r)}
+                      className={`px-3 py-2 text-sm font-semibold rounded-md border transition-colors ${
+                        eRole === r
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background text-foreground border-input hover:bg-muted"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Código RFID">
+                <input
+                  value={eRfid}
+                  onChange={(e) => setERfid(e.target.value.toUpperCase())}
+                  maxLength={50}
+                  className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm font-mono"
+                />
+              </Field>
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setEditing(null)} className="px-4 py-2 text-sm font-semibold rounded-md border border-border bg-background hover:bg-muted">
+                  Cancelar
+                </button>
+                <button
+                  disabled={mUpdate.isPending}
+                  onClick={() => mUpdate.mutate()}
+                  className="px-4 py-2 text-sm font-semibold rounded-md bg-primary text-primary-foreground disabled:opacity-50"
+                >
+                  {mUpdate.isPending ? "Guardando…" : "Guardar Cambios"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
