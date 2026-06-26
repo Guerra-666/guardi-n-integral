@@ -10,6 +10,11 @@ import {
   returnWeapon,
   getReports,
   createUser,
+  updateUser,
+  deleteUser,
+  createWeapon,
+  updateWeapon,
+  deleteWeapon,
 } from "@/lib/armory.functions";
 import logoArmas from "@/assets/logo-armas.png";
 import logoUdefa from "@/assets/logo-udefa.png";
