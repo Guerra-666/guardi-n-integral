@@ -495,6 +495,113 @@ function LoanPanel({
   );
 }
 
+/* ------------------ Personnel Registration ------------------ */
+function PersonnelPanel({
+  onDone,
+  toast,
+  users,
+}: {
+  onDone: () => void;
+  toast: (k: "ok" | "err", m: string) => void;
+  users: any[];
+}) {
+  const createUserFn = useServerFn(createUser);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<"OFICIAL" | "SARGENTO" | "PERSONAL">("PERSONAL");
+  const [rfid, setRfid] = useState("");
+
+  const mCreate = useMutation({
+    mutationFn: () => createUserFn({ data: { name, role, rfid } }),
+    onSuccess: (r) => {
+      toast("ok", r.message);
+      setName(""); setRfid(""); setRole("PERSONAL");
+      onDone();
+    },
+    onError: (e: any) => toast("err", e?.message ?? "Error"),
+  });
+
+  return (
+    <div className="grid lg:grid-cols-2 gap-6">
+      <Card title="Registrar Nueva Persona">
+        <p className="text-sm text-muted-foreground mb-4">
+          Complete los datos y registre la tarjeta RFID asignada a la persona. El código RFID es único e intransferible.
+        </p>
+        <div className="space-y-4">
+          <Field label="Nombre completo y grado">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej. Sgto. Juan Pérez Hernández"
+              maxLength={100}
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm"
+            />
+          </Field>
+
+          <Field label="Rol / Jerarquía">
+            <div className="grid grid-cols-3 gap-2">
+              {(["OFICIAL", "SARGENTO", "PERSONAL"] as const).map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  className={`px-3 py-2 text-sm font-semibold rounded-md border transition-colors ${
+                    role === r
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-background text-foreground border-input hover:bg-muted"
+                  }`}
+                >
+                  {r}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Código RFID (escanear tarjeta o ingresar manualmente)">
+            <input
+              value={rfid}
+              onChange={(e) => setRfid(e.target.value.toUpperCase())}
+              placeholder="Ej. RFID-PS-005"
+              maxLength={50}
+              className="w-full bg-background border border-input rounded-md px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+
+          <button
+            disabled={!name.trim() || !rfid.trim() || mCreate.isPending}
+            onClick={() => mCreate.mutate()}
+            className="w-full bg-primary text-primary-foreground rounded-md px-4 py-2.5 font-semibold disabled:opacity-50"
+          >
+            {mCreate.isPending ? "Registrando…" : "Registrar Persona"}
+          </button>
+        </div>
+      </Card>
+
+      <Card title={`Personal Registrado (${users.length})`}>
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-muted sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2">Nombre</th>
+                <th className="text-left px-3 py-2">Rol</th>
+                <th className="text-left px-3 py-2">RFID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u: any) => (
+                <tr key={u.id} className="border-t border-border">
+                  <td className="px-3 py-2">{u.name}</td>
+                  <td className="px-3 py-2"><RoleBadge role={u.role} /></td>
+                  <td className="px-3 py-2 font-mono text-xs">{u.rfid_code}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
