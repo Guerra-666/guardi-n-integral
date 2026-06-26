@@ -43,7 +43,7 @@ function Dashboard() {
     refetchInterval: 5000,
   });
 
-  const [tab, setTab] = useState<"turno" | "armeria" | "prestamo" | "reportes">("turno");
+  const [tab, setTab] = useState<"turno" | "armeria" | "prestamo" | "personal" | "reportes">("turno");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const pushToast = (kind: Toast["kind"], msg: string) => {
     const id = Date.now() + Math.random();
