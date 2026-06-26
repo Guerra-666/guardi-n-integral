@@ -70,6 +70,7 @@ function Dashboard() {
             { id: "turno", label: "Control de Turno" },
             { id: "armeria", label: "Armería" },
             { id: "prestamo", label: "Préstamo / Devolución" },
+            { id: "personal", label: "Registrar Personal" },
             { id: "reportes", label: "Reportes" },
           ].map((t) => (
             <button
