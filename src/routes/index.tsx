@@ -110,6 +110,10 @@ function Dashboard() {
             />
           )}
 
+          {tab === "personal" && (
+            <PersonnelPanel onDone={invalidate} toast={pushToast} users={data?.users ?? []} />
+          )}
+
           {tab === "reportes" && (
             <ReportsPanel allowed={isOperatorOfficer} />
           )}
