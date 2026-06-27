@@ -37,9 +37,96 @@ async function normalizeCatastrophicSsrResponse(response: Response): Promise<Res
   });
 }
 
+let lastScannedCard: any = {
+  uid: "Ninguna",
+  timestamp_ms: 0,
+  success: false,
+  message: "Esperando aproximación..."
+};
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+
+      // 1. Recibir lectura de tarjeta RFID desde la WeMos
+      if (url.pathname === "/api/scan") {
+        let uidStr = url.searchParams.get("uid");
+        if (!uidStr && request.method === "POST") {
+          try {
+            const body = await request.clone().json() as { uid?: string };
+            uidStr = body.uid || null;
+          } catch (e) {
+            // Ignorar errores de parseo
+          }
+        }
+
+        if (uidStr) {
+          const cardUid = uidStr.trim().toUpperCase();
+          try {
+            const { dbProcessPhysicalScan } = await import("./lib/armory.functions");
+            const result = await dbProcessPhysicalScan(cardUid);
+
+            lastScannedCard = {
+              uid: cardUid,
+              timestamp_ms: Date.now(),
+              success: result.success,
+              message: result.message,
+              user: result.user
+            };
+
+            return new Response(
+              JSON.stringify(lastScannedCard),
+              {
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*"
+                }
+              }
+            );
+          } catch (err) {
+            console.error("Error al procesar escaneo de WeMos:", err);
+            return new Response(
+              JSON.stringify({ success: false, message: err instanceof Error ? err.message : "Error interno del servidor" }),
+              {
+                status: 500,
+                headers: {
+                  "Content-Type": "application/json",
+                  "Access-Control-Allow-Origin": "*"
+                }
+              }
+            );
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ success: false, message: "UID no provisto" }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*"
+            }
+          }
+        );
+      }
+
+      // 2. Servir el estado del último escaneo para el navegador (Caché Cero)
+      if (url.pathname === "/api/last-card") {
+        return new Response(
+          JSON.stringify(lastScannedCard),
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              "Pragma": "no-cache",
+              "Expires": "0",
+              "Access-Control-Allow-Origin": "*"
+            }
+          }
+        );
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

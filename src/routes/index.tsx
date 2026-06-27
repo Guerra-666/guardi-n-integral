@@ -61,6 +61,36 @@ function Dashboard() {
   // RFID simulator selected card (shared across panels)
   const [simRfid, setSimRfid] = useState<string>("");
 
+  // Polling para el lector físico de tarjetas RFID (WeMos)
+  const lastTimestamp = useRef<number>(0);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetch("/api/last-card")
+        .then((res) => res.json())
+        .then((data: any) => {
+          if (data && data.uid && data.uid !== "Ninguna" && data.timestamp_ms) {
+            if (data.timestamp_ms > lastTimestamp.current) {
+              lastTimestamp.current = data.timestamp_ms;
+              
+              // Actualizar el simulador/tarjeta seleccionada
+              setSimRfid(data.uid);
+
+              // Mostrar notificación flotante
+              pushToast(data.success ? "ok" : "err", `RFID física detectada: ${data.message}`);
+
+              // Invalidar consultas para refrescar listas del dashboard
+              invalidate();
+            }
+          }
+        })
+        .catch(() => {
+          // Omitir errores de red en el sondeo
+        });
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const activeOfficers = (data?.activeShift ?? []).filter((r: any) => r.role === "OFICIAL");
   const isOperatorOfficer = activeOfficers.length > 0;
 
@@ -237,13 +267,23 @@ function RfidSimulator({
                 [{u.role}] {u.name} · {u.rfid_code}
               </option>
             ))}
+            {value && !users.some((u) => u.rfid_code === value) && (
+              <option value={value}>
+                [NO REGISTRADA] Tarjeta física aproximada · {value}
+              </option>
+            )}
           </select>
-          {selected && (
+          {selected ? (
             <div className="flex items-center gap-2 text-sm">
               <span className="font-mono bg-muted px-2 py-1 rounded">{selected.rfid_code}</span>
               <RoleBadge role={selected.role} />
             </div>
-          )}
+          ) : value ? (
+            <div className="flex items-center gap-2 text-sm text-destructive font-medium">
+              <span className="font-mono bg-destructive/10 text-destructive px-2 py-1 rounded">{value}</span>
+              <span>Sin registrar</span>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>

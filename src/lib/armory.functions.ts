@@ -369,3 +369,70 @@ export const getReports = createServerFn({ method: "GET" }).handler(async () => 
     };
   });
 });
+
+export async function dbProcessPhysicalScan(rfid: string): Promise<{ success: boolean; message: string; user?: any }> {
+  return withDb(async (db) => {
+    const cleanRfid = rfid.trim();
+    // 1. Buscar usuario
+    const u = await db.execute({ sql: "SELECT * FROM users WHERE rfid_code = ?", args: [cleanRfid] });
+    if (u.rows.length === 0) {
+      return { success: false, message: "Tarjeta RFID no registrada en el sistema." };
+    }
+    const user = u.rows[0] as any;
+    if (!user.is_active) {
+      return { success: false, message: "El usuario está inactivo.", user };
+    }
+    if (user.role === "PERSONAL") {
+      return { success: false, message: "Acceso denegado: Solo oficiales y sargentos registran asistencia.", user };
+    }
+
+    // 2. Verificar si tiene turno activo
+    const open = await db.execute({
+      sql: "SELECT id FROM attendance_logs WHERE user_id = ? AND check_out_timestamp IS NULL",
+      args: [user.id],
+    });
+
+    if (open.rows.length > 0) {
+      // Registrar salida (Check-out)
+      // Bloquear si tiene préstamos pendientes
+      const loans = await db.execute({
+        sql: "SELECT id FROM weapon_transactions WHERE recipient_user_id = ? AND returned_at_timestamp IS NULL",
+        args: [user.id],
+      });
+      if (loans.rows.length > 0) {
+        return { success: false, message: "No puede finalizar turno: tiene armamento sin devolver.", user };
+      }
+
+      await db.execute({
+        sql: "UPDATE attendance_logs SET check_out_timestamp = CURRENT_TIMESTAMP WHERE id = ?",
+        args: [(open.rows[0] as any).id],
+      });
+      return { success: true, message: `Turno finalizado para ${user.name}.`, user };
+    } else {
+      // Registrar entrada (Check-in)
+      const active = await db.execute(`
+        SELECT u.role FROM attendance_logs a JOIN users u ON u.id = a.user_id
+        WHERE a.check_out_timestamp IS NULL
+      `);
+      const roles = active.rows.map((r: any) => r.role);
+      if (roles.length >= 3) {
+        return { success: false, message: "Límite alcanzado: máximo 3 personas en turno simultáneo.", user };
+      }
+      const oficiales = roles.filter((r) => r === "OFICIAL").length;
+      const sargentos = roles.filter((r) => r === "SARGENTO").length;
+      if (user.role === "OFICIAL" && oficiales >= 1) {
+        return { success: false, message: "Ya hay 1 OFICIAL en turno activo.", user };
+      }
+      if (user.role === "SARGENTO" && sargentos >= 2) {
+        return { success: false, message: "Ya hay 2 SARGENTOS en turno activo.", user };
+      }
+
+      const logId = uid("att");
+      await db.execute({
+        sql: "INSERT INTO attendance_logs (id, user_id) VALUES (?, ?)",
+        args: [logId, user.id],
+      });
+      return { success: true, message: `Turno iniciado para ${user.name}.`, user };
+    }
+  });
+}
