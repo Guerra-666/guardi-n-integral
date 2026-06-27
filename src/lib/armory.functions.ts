@@ -62,7 +62,7 @@ export const createUser = createServerFn({ method: "POST" })
     const name = (data.name ?? "").trim();
     const rfid = (data.rfid ?? "").trim();
     if (name.length < 3 || name.length > 100) throw new Error("El nombre debe tener entre 3 y 100 caracteres.");
-    if (!/^[A-Za-z0-9\-_.]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
+    if (!/^[A-Za-z0-9\-_.:]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
     if (!["OFICIAL", "SARGENTO", "PERSONAL"].includes(data.role)) throw new Error("Rol inválido.");
     return withDb(async (db) => {
       const exists = await db.execute({ sql: "SELECT id FROM users WHERE rfid_code = ?", args: [rfid] });
@@ -82,7 +82,7 @@ export const updateUser = createServerFn({ method: "POST" })
     const name = (data.name ?? "").trim();
     const rfid = (data.rfid ?? "").trim();
     if (name.length < 3 || name.length > 100) throw new Error("El nombre debe tener entre 3 y 100 caracteres.");
-    if (!/^[A-Za-z0-9\-_.]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
+    if (!/^[A-Za-z0-9\-_.:]{3,50}$/.test(rfid)) throw new Error("El código RFID es inválido (3–50 caracteres, sin espacios).");
     if (!["OFICIAL", "SARGENTO", "PERSONAL"].includes(data.role)) throw new Error("Rol inválido.");
     return withDb(async (db) => {
       const u = await db.execute({ sql: "SELECT id FROM users WHERE id = ?", args: [data.id] });
